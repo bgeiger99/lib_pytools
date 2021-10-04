@@ -44,8 +44,18 @@ Quickstart:
 
 
     simdsp.close()
-
 """
+
+
+""" The master version of this code is tracked separately. The latest version
+(which may not be compatible) is available at:
+    http://gitlab/gitlab/reference/lib_pytools
+    -- or --
+    https://github.com/bgeiger99/lib_pytools
+"""
+__version__ = '1.0.0'  # see http://gitlab/gitlab/reference/lib_pytools for the latest version
+
+
 
 import pygame
 import time
@@ -168,7 +178,7 @@ class BaseSimpleDisplay:
 
         if app_icon_filename is not None:
             try:
-                icon_filename = os.path.abspath(os.path.join(os.path.dirname(__file__),"piac_icon.png"))
+                icon_filename = os.path.abspath(os.path.join(os.path.dirname(__file__),"simple_pygame_display_assets/piac_icon.png"))
                 with open(icon_filename, 'r') as f:
                     # doing it this way because passing a filename seems to be problematic for pygame.image.load
                     programIcon = pygame.image.load(f)
