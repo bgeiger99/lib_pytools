@@ -25,7 +25,7 @@ This dll also exposes timers, but I think they are the same ones used already (i
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.1'  # see http://gitlab/gitlab/reference/lib_pytools for the latest version
+__version__ = '1.0.1'
 
 
 
