@@ -53,7 +53,7 @@ Quickstart:
     -- or --
     https://github.com/bgeiger99/lib_pytools
 """
-__version__ = '1.0.0'  # see http://gitlab/gitlab/reference/lib_pytools for the latest version
+__version__ = '1.1.0'  # see http://gitlab/gitlab/reference/lib_pytools for the latest version
 
 
 
@@ -293,6 +293,11 @@ class BaseSimpleDisplay:
     @property
     def txt_ypos(self):
         return self.textPrint.y
+
+    def draw_rect(self,color,pos,width=0,border_radius=0):
+        pygame.draw.rect(self.screen, pygame.Color(color), pos, width=width,border_radius=border_radius)
+
+
 
 
 
