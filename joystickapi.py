@@ -23,7 +23,7 @@ pyglet alternatively uses DirectInput to read joysticks:
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 
 import ctypes
@@ -146,9 +146,9 @@ class Joystick:
     def get_numhats(self):
         return len(self.hats)
 
-    def get_axes_str(self):
+    def get_axes_str(self,sp=' '):
         """Output a convenient string with joystick axes state."""
-        return ', '.join([f"{j:2d}:{self.get_axis(j):6.3f}" for j in range(self.n_axes)])
+        return f',{sp}'.join([f"{j}:{self.get_axis(j):6.3f}" for j in range(self.n_axes)])
 
     def get_btns_str(self,sp0=' ',sp1=' '):
         """Output a convenient string with joystick button states."""
