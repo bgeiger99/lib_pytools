@@ -23,7 +23,7 @@ pyglet alternatively uses DirectInput to read joysticks:
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 
 import ctypes
@@ -150,14 +150,18 @@ class Joystick:
         """Output a convenient string with joystick axes state."""
         return f',{sp}'.join([f"{j}:{self.get_axis(j):6.3f}" for j in range(self.n_axes)])
 
-    def get_btns_str(self,sp0=' ',sp1=' '):
+    def get_btns_str(self,sp=''):
         """Output a convenient string with joystick button states."""
-        return ''.join([f"{sp0}X{sp1}" if self.get_button(j) else f"{sp0}-{sp1}" for j in range(self.n_btns)])
+        return f"{sp}".join(["X" if b else "-" for b in self.btns])
 
 
 #%%
 class JoystickReader:
     """Impement a class that reads all joysticks and returns their data in a joystick object."""
+
+    # Using joyGetPosEx() always returns 6 axes values regardless of hardware.
+    # See https://docs.microsoft.com/en-us/previous-versions/dd757112(v=vs.85)
+    NUM_JOY_AXES = 6
 
     hats_4way = {0:    ( 0, 1),
                  4500: ( 1, 1),
@@ -170,25 +174,24 @@ class JoystickReader:
                  65535:( 0, 0),
                  }
 
-    def __init__(self,axes_reorder=None):
+    def __init__(self):
+        self.initialize()
+
+    def initialize(self):
+        """Check for an existing joystick and initialize its object if found.
+
+        This will reset self.stk dict when called. If no joysticks are connected,
+        this function can be quite slow as it cycles through all possible
+        joystick ids.
+        """
+        self.stk = {}
+        self.info = JOYINFO()
+        self.p_info = ctypes.pointer(self.info)
+
         self.num_js = joyGetNumDevs()
         if self.num_js == 0:
             print("Joystick driver not loaded.")
 
-        if axes_reorder is None:
-            self.axes_reorder = list(range(6))
-        else:
-            self.axes_reorder = axes_reorder
-
-        self.info = JOYINFO()
-        self.p_info = ctypes.pointer(self.info)
-
-        self.initialize()
-
-    def initialize(self):
-        """Check for an existing joystick and initialize its object if found."""
-        self.stk = {}
-        self.info = JOYINFO()
         for jsid in range(self.num_js):
             if joyGetPos(jsid, self.p_info) == JOYERR_NOERROR:
                 caps = JOYCAPS()
@@ -205,13 +208,14 @@ class JoystickReader:
                                               flags = flags)
 
         if not self.stk:
-            pass
+            self.NO_JOY = True
             # print("no joysticks detected")
         else:
+            self.NO_JOY = False
             #init storage - these are reused across multiple joysticks
             self.info_ex  = JOYINFOEX()
             self.info_ex.dwSize = ctypes.sizeof(JOYINFOEX)
-            self.info_ex.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNCENTERED | JOY_RETURNPOV | JOY_RETURNU | JOY_RETURNV | JOY_RETURNX | JOY_RETURNY | JOY_RETURNZ
+            self.info_ex.dwFlags = JOY_RETURNBUTTONS | JOY_RETURNCENTERED | JOY_RETURNPOV | JOY_RETURNR | JOY_RETURNU | JOY_RETURNV | JOY_RETURNX | JOY_RETURNY | JOY_RETURNZ
             self.p_info_ex = ctypes.pointer(self.info_ex)
 
 
@@ -241,20 +245,29 @@ class JoystickReader:
         return len(self.stk)
 
 
+    def get_first_jsobj(self):
+        """Return the first joystick object if it exists."""
+        return next(iter(self.stk.values())) if self.stk else None
+
+
+    def get_jsobj_by_index(self,idx=0):
+        return self.stk[list(self.stk)[idx]] if self.stk else None
+
+
     def read_joystick(self,jsid):
         """Read all joystick axes, buttons, and hats."""
         js = self.stk[jsid]
-        caps = js.caps
+        flags = js.flags
         if joyGetPosEx(jsid, self.p_info_ex) == JOYERR_NOERROR:
-            tmpax = [(self.info_ex.dwXpos-js.midval)/(js.midval+1.0),
-                     (self.info_ex.dwYpos-js.midval)/(js.midval+1.0),
-                     (self.info_ex.dwZpos-js.midval)/(js.midval+1.0),
-                     (self.info_ex.dwRpos-js.midval)/(js.midval+1.0),
-                     (self.info_ex.dwUpos-js.midval)/(js.midval+1.0),
-                     (self.info_ex.dwVpos-js.midval)/(js.midval+1.0)]
-            for i in range(js.n_axes):
-                js.axes[i] = tmpax[self.axes_reorder[i]]
-            js.btns[:] = [(1 << i) & self.info_ex.dwButtons != 0 for i in range(caps.wNumButtons)]
+
+            js.axes[0] = (self.info_ex.dwXpos-js.midval)/(js.midval+1.0)
+            js.axes[1] = (self.info_ex.dwYpos-js.midval)/(js.midval+1.0)
+            if flags['HASZ']: js.axes[2] = (self.info_ex.dwZpos-js.midval)/(js.midval+1.0)
+            if flags['HASR']: js.axes[3] = (self.info_ex.dwRpos-js.midval)/(js.midval+1.0)
+            if flags['HASU']: js.axes[4] = (self.info_ex.dwUpos-js.midval)/(js.midval+1.0)
+            if flags['HASV']: js.axes[5] = (self.info_ex.dwVpos-js.midval)/(js.midval+1.0)
+
+            js.btns = [(1 << i) & self.info_ex.dwButtons != 0 for i in range(js.n_btns)]
 
             if js.flags['HASPOV']:
                 if js.flags['POVCTS']:
@@ -273,20 +286,13 @@ class JoystickReader:
 
     def process_joysticks(self,joystick_to_use=-1):
         """Perform joystick input processing."""
-        # Get count of joysticks.
-        joystick_count = self.get_count()
-
         # This will only take the first joystick found. If you plan to have multiple joysticks
         # connected, this will need modification.
-        if joystick_count==0:
+        if self.get_count()==0:
             self.initialize() # look for a new joystick -  this can be slow
         else:
-            if joystick_to_use not in self.stk.keys() and joystick_to_use!=-1:
-                print(f"ERROR: requested joystick ID [{joystick_to_use}] not found.")
-
-        # For each joystick:
-        for i in self.stk.keys():
-            self.read_joystick(i)
+           for i in self.stk.keys():
+               self.read_joystick(i)
 
 
 
@@ -300,15 +306,23 @@ if __name__ == '__main__':
     js_reader = JoystickReader()
 
     jsid=0
+    mean_dt = 0
+    i=0
     while True:
+        i+=1
+        t0=time.perf_counter()
         js_reader.process_joysticks()
+        dt=time.perf_counter()-t0
+        mean_dt=((i-1)*mean_dt + dt)/i
         if jsid in js_reader.stk:
             stk = js_reader.stk[jsid]
             ax = ','.join([f"{x:6.3f}" for x in stk.axes])
             if stk.ERROR:
                 print("Cant read")
             else:
-                print(f"{stk.fresh:3d} Joystick {jsid}: axes:[{ax}] btns:{stk.btns} hats:{stk.hats}")
+                print(f"{mean_dt*1e6:5.1f}us {dt*1e6:5.1f}us {stk.fresh:3d} Joystick {jsid}: axes:[{ax}] btns:{stk.btns} hats:{stk.hats}")
+        else:
+            print(f'{i} no joystick')
         time.sleep(.1)
 
 
