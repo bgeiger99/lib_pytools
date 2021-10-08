@@ -25,7 +25,7 @@ This dll also exposes timers, but I think they are the same ones used already (i
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 
 
@@ -78,10 +78,13 @@ class Clock:
 
         bManualReset = ctypes.c_bool(False)
         self.otimer = kernel32.CreateWaitableTimerA(ctypes.c_void_p(), bManualReset, ctypes.c_void_p())
-        delay = ctypes.c_longlong(-(1)) # delay must be negative in 100 nanosecond intervals
-        interval = ctypes.c_long(int(self.frame_length*1000))
-        ret=kernel32.SetWaitableTimer(self.otimer,ctypes.byref(delay), interval, ctypes.c_void_p(), ctypes.c_void_p(), False)
-
+        self.delay = ctypes.c_longlong(-(1)) # delay to start timer must be negative in 100 nanosecond intervals
+        interval = ctypes.c_long(int(self.frame_length*1000)) # timer interval, ms
+        pfnCompletionRoutine = ctypes.c_void_p()  # this could be a callback function
+        fResume = False # wake up if in power convervation mode
+        ret = kernel32.SetWaitableTimer(self.otimer, ctypes.byref(self.delay), interval, pfnCompletionRoutine, ctypes.c_void_p(), fResume)
+        if ret == 0:
+            raise ValueError("Could not setup timer function.")
 
 
     @property
