@@ -25,7 +25,7 @@ This dll also exposes timers, but I think they are the same ones used already (i
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 
 
 
@@ -94,7 +94,7 @@ class Clock:
 
     @property
     def subtick(self):
-        """Return the integer number of nanoseconds remaining in this current tick."""
+        """Return the integer number of nanoseconds elapsed in the current tick."""
         return (time.perf_counter_ns() - self.start_ns) % self.frame_len_ns
 
     def sleep(self):
