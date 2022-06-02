@@ -299,7 +299,7 @@ class BaseSimpleDisplay:
 
 
 
-
+pressed_w=False
 
 #%% ===== Example =================================================================================
 if __name__ == "__main__":
@@ -318,6 +318,8 @@ if __name__ == "__main__":
         for event in simdsp.events: # User did something.
             if event.type == pygame.KEYDOWN: # user pressed a key
                 print(f"User pressed {event.unicode}")
+                if event.unicode == 'w':
+                    pressed_w = not pressed_w
                 if event.unicode=='q':
                     print('quitting..')
                     simdsp.running=False  # This is not required, just here as an example
@@ -334,6 +336,7 @@ if __name__ == "__main__":
         simdsp.unindent()
         var1=10.
         simdsp.tprint(f"My number is {var1}")
+        simdsp.tprint(f"W is {pressed_w}")
 
 
     simdsp.close()
