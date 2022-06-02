@@ -300,7 +300,7 @@ class JoystickReader:
 
 
 
-#%%
+#%% Run this file for an example
 if __name__ == '__main__':
     import time
     js_reader = JoystickReader()
