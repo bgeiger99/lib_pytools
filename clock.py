@@ -6,8 +6,13 @@ Created on Fri Sep 20 15:50:00 2019
 
 Windows only. This will probably stop working correctly in Windows 11.
 
-Clock.sleep() for pretty much everything
-Clock.sleep_b() for high accuracy but more cpu
+    Clock.sleep() or Clock.sleep_win_kernel_periodic() for pretty much everything
+
+    Clock.sleep_free() if a timer that can slide its reference is needed.
+
+    Clock.sleep_b() for high accuracy but more cpu
+
+Ignore the rest.
 
 call Clock.shutdown() at the end of the run
 
@@ -17,6 +22,11 @@ This dll also exposes timers, but I think they are the same ones used already (i
     http://undocumented.ntinternals.net/UserMode/Undocumented%20Functions/NT%20Objects/Timer/NtSetTimer.html
     https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/ntos/ntosdef_x/ktimer.htm
 
+
+NOTE JULY 2022: Python 3.11 when released will use higher precision timers with 100 ns resolution on
+Windows 8.1+. See the 'time' section: https://docs.python.org/3.11/whatsnew/3.11.html#time
+This module uses CreateWaitableTimerA, but the new timers with higher resolution call CreateWaitableTimerW
+
 """
 
 
@@ -25,7 +35,7 @@ This dll also exposes timers, but I think they are the same ones used already (i
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 
 
@@ -35,6 +45,8 @@ import ctypes
 kernel32 = ctypes.windll.kernel32
 winmm = ctypes.WinDLL('winmm')
 
+
+WaitForSingleObject = kernel32.WaitForSingleObject
 
 
 #%%============================================================================
@@ -75,16 +87,26 @@ class Clock:
         # This creates a timer. This only needs to be done once.
         self.ktimer = kernel32.CreateWaitableTimerA(ctypes.c_void_p(), True, ctypes.c_void_p())
 
-
         bManualReset = ctypes.c_bool(False)
-        self.otimer = kernel32.CreateWaitableTimerA(ctypes.c_void_p(), bManualReset, ctypes.c_void_p())
+        NULL=ctypes.c_void_p()
         self.delay = ctypes.c_longlong(-(1)) # delay to start timer must be negative in 100 nanosecond intervals
         interval = ctypes.c_long(int(self.frame_length*1000)) # timer interval, ms
-        pfnCompletionRoutine = ctypes.c_void_p()  # this could be a callback function
+        pfnCompletionRoutine = NULL  # this could be a callback function
         fResume = False # wake up if in power convervation mode
-        ret = kernel32.SetWaitableTimer(self.otimer, ctypes.byref(self.delay), interval, pfnCompletionRoutine, ctypes.c_void_p(), fResume)
+
+        try_hi_res=False
+        if try_hi_res:
+            # this is from the python 3.11 discussion on win8.1+ higher res timers.
+            # I can't get it to work properly - it runs slow.
+            self.otimer = kernel32.CreateWaitableTimerExW(NULL, NULL, 0x00000002, 0x1F0003)
+            ret = kernel32.SetWaitableTimerEx(self.otimer, ctypes.byref(self.delay), interval, NULL, NULL, NULL, 0)
+        else:
+            # self.otimer = kernel32.CreateWaitableTimerA(NULL, bManualReset, NULL)
+            self.otimer = kernel32.CreateWaitableTimerW(NULL, bManualReset, NULL)  # Using W is better (less variation, less CPU) than A
+            ret = kernel32.SetWaitableTimer(self.otimer, ctypes.byref(self.delay), interval, pfnCompletionRoutine, NULL, fResume)
+
         if ret == 0:
-            raise ValueError("Could not setup timer function.")
+            raise ValueError(f"Could not setup timer function:  {self.otimer}")
 
 
     @property
@@ -98,10 +120,18 @@ class Clock:
         return (time.perf_counter_ns() - self.start_ns) % self.frame_len_ns
 
     def sleep(self):
-        """Sleep until the next tick."""
+        """Sleep until the next tick. sleep is locked to the starting time. """
         r = self.tick + 1
         while self.tick < r:
             time.sleep(0.001)
+
+
+    def sleep_free(self):
+        """Sleep until the next interval - sleep_free is not locked to a starting tick."""
+        while time.perf_counter_ns() < self.free_tick:
+            time.sleep(0.001)
+        self.free_tick = time.perf_counter_ns() + self.frame_len_ns - 1000000  # int(0.001*1e9) # improve accuracy by account for the last sleep.
+
 
     def sleep_ns(self):
         rt = self.tick+1
@@ -171,12 +201,13 @@ class Clock:
 
 
     def sleep_win_kernel_periodic(self):
-        kernel32.WaitForSingleObject(self.otimer, 0xffffffff)
+        WaitForSingleObject(self.otimer, 0xffffffff)
 
 
     def reset(self):
         """Reset the clock object to prepare for switching to a different timer type."""
         self.prevtick=0
+        self.free_tick=0
         self.dly_adj=0
         self.mytick=0
         self.dropped=0
@@ -187,6 +218,8 @@ class Clock:
     def shutdown(self):
         """Perform shutdown tasks."""
         winmm.timeEndPeriod(self.WINTIMER_RES_MS)
+        kernel32.CancelWaitableTimer(self.ktimer)
+        kernel32.CancelWaitableTimer(self.otimer)
 
 
     def test(self,method='sleep',duration=10,duty_loops=50000):
@@ -204,6 +237,7 @@ class Clock:
         proc_vec=[]
 
         m_dict = {'sleep':self.sleep,
+                  'sleep_free':self.sleep_free,
                   'sleep_ns': self.sleep_ns,
                   'sleep_b':self.sleep_b,
                   'sleep_win_kernel_subt':self.sleep_win_kernel_subt,
@@ -263,10 +297,11 @@ if __name__ == "__main__":
     c=Clock(100)
     try:
         z=c.test(); c.reset()
-        z=c.test('sleep_ns'); c.reset()
-        z=c.test('sleep_b'); c.reset()
-        z=c.test('sleep_win_kernel_adj'); c.reset()
-        z=c.test('sleep_win_kernel_subt'); c.reset()
+        z=c.test('sleep_free');c.reset()
+        # z=c.test('sleep_ns'); c.reset()
+        # z=c.test('sleep_b'); c.reset()
+        # z=c.test('sleep_win_kernel_adj'); c.reset()
+        # z=c.test('sleep_win_kernel_subt'); c.reset()
         z=c.test('sleep_win_kernel_periodic'); c.reset()
     finally:
         c.shutdown()
