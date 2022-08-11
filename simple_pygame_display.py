@@ -53,7 +53,7 @@ Quickstart:
     -- or --
     https://github.com/bgeiger99/lib_pytools
 """
-__version__ = '1.1.0'  # see http://gitlab/gitlab/reference/lib_pytools for the latest version
+__version__ = '1.2.0'  # see http://gitlab/gitlab/reference/lib_pytools for the latest version
 
 
 
@@ -68,6 +68,7 @@ import os
 BLACK = pygame.Color('black')
 WHITE = pygame.Color('white')
 GREEN = pygame.Color('green')
+YELLOW = pygame.Color('yellow')
 RED = pygame.Color('red')
 DARKBLU = pygame.Color(41,45,62,1)
 
@@ -115,6 +116,135 @@ class TextPrint(object):
 
     def unindent(self):
         self.x -= 10
+
+#%%
+class Button:
+    def __init__(self,screen,gui_font,text,text_pressed,width,height,pos,elevation,is_toggle=False,callback=None):
+        """Implement a simple button (momentary or toggle). Refer to BaseSimpleDisplay.add_button for usage."""
+
+        self.screen = screen
+        self.gui_font = gui_font
+
+        #Core attributes
+        self.pressed = False
+        self.changed_to_pressed = False
+        self.changed_to_unpressed = False
+        self.elevation = elevation
+        self.dynamic_elecation = elevation
+        self.original_y_pos = pos[1]
+        self.callback = callback
+
+        self._normal_color = '#475F77'
+        self._hover_color = '#D74B4B'
+        self._pressed_color = '#8a6a00'
+        self._shadow_color = '#354B5E'
+
+        self._is_toggle = is_toggle
+
+        self._prev_click = pygame.mouse.get_pressed()[0]
+
+        # top rectangle
+        self.top_rect = pygame.Rect(pos,(width,height))
+        self.top_color = self._normal_color
+        self.text_pressed = text_pressed
+        # bottom rectangle
+        self.bottom_rect = pygame.Rect(pos,(width,height))
+        self.bottom_color = self._shadow_color
+        #text
+        self.text = text
+        self.text_surf = gui_font.render(text,True,'#FFFFFF')
+        self.text_rect = self.text_surf.get_rect(center = self.top_rect.center)
+
+    def change_text(self, newtext):
+        self.text_surf = self.gui_font.render(newtext, True,'#FFFFFF')
+        self.text_rect = self.text_surf.get_rect(center = self.top_rect.center)
+
+    def draw(self):
+
+        if self._is_toggle:
+            self.check_click_toggle()
+        else:
+            self.check_click()
+
+        # elevation logic
+        self.top_rect.y = self.original_y_pos - self.dynamic_elecation
+        self.text_rect.center = self.top_rect.center
+
+        self.bottom_rect.midtop = self.top_rect.midtop
+        self.bottom_rect.height = self.top_rect.height + self.dynamic_elecation
+
+        pygame.draw.rect(self.screen,self.bottom_color, self.bottom_rect,border_radius = 12)
+        pygame.draw.rect(self.screen,self.top_color, self.top_rect,border_radius = 12)
+        self.screen.blit(self.text_surf, self.text_rect)
+
+    def check_click_toggle(self):
+        self.changed_to_pressed = False
+        self.changed_to_unpressed = False
+        mouse_pos = pygame.mouse.get_pos()
+        if self.top_rect.collidepoint(mouse_pos):
+            self.top_color = self._hover_color
+            mouse_left_click = pygame.mouse.get_pressed()[0]
+            if mouse_left_click:
+                self.dynamic_elecation = 0
+                if not self._prev_click:
+                    # user just clicked, toggle pressed state
+                    self.pressed = not self.pressed
+
+                    if self.pressed:
+                        print('button toggled')
+                        self.changed_to_pressed = True
+                        if self.text_pressed:
+                            self.change_text(f"{self.text_pressed}")
+                        if self.callback:
+                            self.callback()
+            else:
+                if self.pressed:
+                    self.dynamic_elecation = self.elevation - 2
+                else:
+                    self.dynamic_elecation = self.elevation
+
+            if self._prev_click and not mouse_left_click and not self.pressed:
+                self.changed_to_unpressed = True
+                print('button released')
+            self._prev_click = mouse_left_click
+
+        else:
+            if self.pressed:
+                self.top_color = self._pressed_color
+                self.dynamic_elecation = self.elevation - 2
+                if self.text_pressed:
+                    self.change_text(f"{self.text_pressed}")
+            else:
+                self.top_color = self._normal_color
+                self.dynamic_elecation = self.elevation
+                self.change_text(self.text)
+
+
+    def check_click(self):
+        self.changed_to_pressed = False
+        self.changed_to_unpressed = False
+        mouse_pos = pygame.mouse.get_pos()
+        if self.top_rect.collidepoint(mouse_pos):
+            self.top_color = self._hover_color
+            if pygame.mouse.get_pressed()[0]:
+                self.changed_to_pressed = not self.pressed
+                self.dynamic_elecation = 0
+                self.pressed = True
+                if self.text_pressed:
+                    self.change_text(f"{self.text_pressed}")
+            else:
+                self.changed_to_unpressed = self.pressed
+                self.dynamic_elecation = self.elevation
+                if self.pressed == True:
+                    if self.callback:
+                        self.callback()
+                    self.pressed = False
+                    self.change_text(self.text)
+        else:
+            self.pressed = False
+            self.change_text(self.text)
+            self.dynamic_elecation = self.elevation
+            self.top_color = self._normal_color
 
 #%%
 class BaseSimpleDisplay:
@@ -194,6 +324,8 @@ class BaseSimpleDisplay:
         self.rate=fps_desired
         self.smoothing_frames = 2
 
+        self.buttons = {}
+
     def loop_controller(self):
         """ I might change this later but this was the easy way to eliminate putting
         run_at_top_of_loop() and run_at_bottom_of_loop in user's GUI code"""
@@ -227,6 +359,10 @@ class BaseSimpleDisplay:
         # above this, or they will be erased with this command.
         self.screen.fill(self.BGCOLOR)
         self.textPrint.reset()
+
+        # Update buttons
+        for btn in self.buttons.values():
+            btn.draw()
 
         self.loop_ctrl_flag = True # true so that run_at_bottom_of_loop is called next time.
 
@@ -266,7 +402,7 @@ class BaseSimpleDisplay:
         # which is 1000/11 = 90.0 Hz. Therefore, to get 100 fps, request just over 100 (such as 100.1) and
         # the tick will result in a minimum frame time of 10 msec.
         self.clock.tick(self.fps_desired)
-        # self.clock.sleep() # see note above at self.clock
+        # self.clock.sleep_win_kernel_periodic() # see note above at self.clock
 
 
 
@@ -297,6 +433,10 @@ class BaseSimpleDisplay:
     def draw_rect(self,color,pos,width=0,border_radius=0):
         pygame.draw.rect(self.screen, pygame.Color(color), pos, width=width,border_radius=border_radius)
 
+    def add_button(self,name,text,text_pressed,width,height,pos,elevation,is_toggle=False,callback=None):
+        self.buttons[name] = Button(self.screen,self.textPrint.font,text,text_pressed,width,height,pos,elevation,is_toggle,callback)
+
+
 
 
 pressed_w=False
@@ -310,6 +450,9 @@ if __name__ == "__main__":
                                fontname="Consolas",
                                fontsize=11,
                               )
+
+    simdsp.add_button('test_button',   'Btn Cmd',None,140,18,(190,90),4)
+    simdsp.add_button('test_toggle',   'Toggle Cmd',None,140,18,(190,120),4,is_toggle=True)
 
     while simdsp.loop_controller():
         # this loop will run at 25 FPS
@@ -337,6 +480,9 @@ if __name__ == "__main__":
         var1=10.
         simdsp.tprint(f"My number is {var1}")
         simdsp.tprint(f"W is {pressed_w}")
+        simdsp.newline()
+        simdsp.tprint(f" test_button:  {simdsp.buttons['test_button'].pressed}")
+        simdsp.tprint(f" test_toggle:  {simdsp.buttons['test_toggle'].pressed}")
 
 
     simdsp.close()
