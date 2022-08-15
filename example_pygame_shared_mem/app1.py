@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), '..'
 
 import pygame
 import simple_pygame_display
-from shared_mem_numpy_array import SharedMemNumpyArr
+from shared_mem_dict import SharedMemDict
 import yaml
 
 
@@ -36,7 +36,7 @@ with open(cfg_file,'r') as f:
 #  terrain height and normal vector reported below the vehicle from XPlane
 reset_shm = True # if True, always reset the shared_memory
 xplane_shm_io = cfg_dict['shr_mem']['sim_io']
-sim_shm = SharedMemNumpyArr(**cfg_dict['shr_mem']['sim_io'], reset_shm=reset_shm)
+sim_shm = SharedMemDict(**cfg_dict['shr_mem']['sim_io'], reset_shm=reset_shm)
 
 #%%
 simdsp = simple_pygame_display.BaseSimpleDisplay(app_title="App1-UpCount",
