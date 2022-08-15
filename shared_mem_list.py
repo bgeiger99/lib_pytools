@@ -79,12 +79,12 @@ dtypes = {'float64':'d',
           }
 
 
-class SharedMemNumpyArr():
+class SharedMemDict():
     def __init__(self,name,num,dtype,reset_shm=False,varnames=None):
-        """Create or connect to a shared memory array via memoryview to the buffer of a single data
-        type.
+        """Create or connect to a shared memory dict. Values in the dict can be accessed by name or
+        by numerical index; the values are all a single data type.
 
-        This approach is ~10x faster than using a ShareableList, but it only allows a single data
+        This approach is ~20x faster than using a ShareableList, but it only allows a single data
         type per shared memory area.
 
         Params
@@ -104,12 +104,12 @@ class SharedMemNumpyArr():
 
         Returns
         -------
-        SharedMemNumpyArr object that is used to access individual list elements. See examples for
+        SharedMemDict object that is used to access individual list elements. See examples for
         usage.
 
         Example 1: Unnamed array
         ------------------------
-            shm = SharedMemNumpyArr(name='example_shm_id', num=10, dtype='float64')
+            shm = SharedMemDict(name='example_shm_id', num=10, dtype='float64')
             shm[0] = 1.125
             shm.setvar(2,37.31)
             shm[9] = 18.7124
@@ -121,7 +121,7 @@ class SharedMemNumpyArr():
 
         Example 2: Named Array
         ----------------------
-            shm = SharedMemNumpyArr(name='example_named_shm_id', num=5, dtype='float64', varnames=['ab1','ab2','alt','mzl','dop'])
+            shm = SharedMemDict(name='example_named_shm_id', num=5, dtype='float64', varnames=['ab1','ab2','alt','mzl','dop'])
 
             shm['ab1'] = 1.125
             print(f"(shm['ab1']) {shm['ab1']} == {shm.arr[0]}  (shm.arr[0])")
@@ -196,14 +196,20 @@ class SharedMemNumpyArr():
     def __setitem__(self,key,value):
         self.arr[ self.varnames[key] ] = value
 
+    def __len__(self):
+        return self.num
+
     def keys(self):
         return self.varnames.keys()
+
+    def values(self):
+        return self.arr.tolist()[:self.num]
 
     def getvar(self,varname):
         return self.arr[ self.varnames[varname] ]
 
     def setvar(self,varname,value):
-        self.arr[ self.varnames[varname] ] = value
+        self[varname] = value
 
     def close(self):
         # To prevent a memoryview error message (cannot close exported pointers exist), arr is
@@ -222,45 +228,58 @@ class SharedMemNumpyArr():
 if __name__ == "__main__":
 
     # Example 1: unnammed array
+    print("\n\nExample 1: unnammed array")
     shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
                'num':  10,  # number of variables in the shared memory array
                'dtype': 'float64',  # datatype of the shared memory array
                'varnames': None, # optional names for each variable
                }
 
-    shm = SharedMemNumpyArr(**shm_cfg)
+    shm = SharedMemDict(**shm_cfg)
+    print("    Set array items by index number.")
     shm[0] = 1.125
-    shm.setvar(2,37.31)
+    shm.setvar(1,37.31)
+    shm.arr[2] = 37.37
     shm[9] = 18.7124
-    print(shm.arr)
-    print(shm.getvar(2))
-    print(shm.keys())
+    print( " Access values using three methods:")
+    print(f"    Dict key:    shm[0]        -> {shm[0]}")
+    print(f"    Array Index: shm.arr[0]    -> {shm.arr[0]}")
+    print(f"    getvar():    shm.getvar(0) -> {shm.getvar(0)} (equivalent to dict key)")
+    print(f" Get all values:  shm.values(): {shm.values()}")
+    print(f" List all keys:   shm.keys(): {shm.keys()}")
     # %timeit shm[1]
+    # %timeit shm.arr[1]  # indexing the array directly is 2-3x faster than using the dict key
     # %timeit shm.getvar(1)
     # %timeit shm[1] = 8124.11
+    # %timeit shm.arr[1]=8124.11  # indexing the array directly is 2-3x faster than using the dict key
     # %timeit shm.setvar(1,8124.11)
-    # %timeit shm.arr[1]  # indexing the array directly is a little faster
-    # %timeit shm.arr[1]=8124.11  # indexing the array directly is a little faster
     shm.close()
     shm.unlink()
 
+    # Compare to ShareableList
     shm_list = shared_memory.ShareableList(10*[1.001])
     # %timeit shm_list[1]
     # %timeit shm_list[1]=8124.11
 
 
     # Example 2: Named variables
+    print("\n\nExample 2: Named Variables")
     shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
                'num':  10,  # number of variables in the shared memory array
                'dtype': 'float64',  # datatype of the shared memory array
                'varnames': ['ab1','ab2','alt','mzl','dop','los','psi','uw','orange','bolt',], # optional names for each variable
                }
 
-    shm = SharedMemNumpyArr(**shm_cfg)
+    shm = SharedMemDict(**shm_cfg)
     shm['ab1'] = 1.125
-    print(f"(shm['ab1']) {shm['ab1']} == {shm.arr[0]}  (shm.arr[0])")
-    print(shm.keys())
+    print( " Access values using three methods:")
+    print(f"    Dict key:    shm['ab1']        -> {shm['ab1']}")
+    print(f"    Array Index: shm.arr[0]        -> {shm.arr[0]}")
+    print(f"    getvar():    shm.getvar('ab1') -> {shm.getvar('ab1')} (equivalent to dict key)")
+    print(f" Get all values:  shm.values(): {shm.values()}")
+    print(f" List all keys:   shm.keys(): {shm.keys()}")
     # %timeit shm['ab1']
+    # %timeit shm.arr[0]
     shm.close()
     shm.unlink()
 
