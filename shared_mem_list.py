@@ -4,7 +4,7 @@ Created on Thu Jan 28 10:50:58 2021
 
 @author: geiger_br
 
-helper class for shared memory with numpy arrays
+Class for communicating with other processes using shared memory.
 
 Individual values in shared memory can be accessed in two different ways. Both are reasonably fast,
 but the second is twice as fast as the first:
@@ -18,8 +18,8 @@ but the second is twice as fast as the first:
         val = shm.arr[0]
         shm.arr[0] = val
 
-This approach is ~10x faster than using a ShareableList, but it only allows a single data
-type per shared memory area.
+This approach is between ~15x and ~55x faster than using shared_memory.ShareableList, but it only
+allows a single data type per shared memory area.
 
 """
 
@@ -28,16 +28,61 @@ type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.1.0'
+__version__ = '1.2.0'
+
+"""
+Changelog
+=========
+
+1.2.0 (2022-08-15)
+------------------
+
+I'm removing the use of numpy buffers in exchange for slicing and casting memoryviews.
+This removes the numpy dependency and runs a little faster too. Shared memory sections are still
+limited to a single data type, but this could be remedied by subslicing the memoryview and casting
+as appropriate. The documentation of memoryview.format seems to suggest that disparate data types
+could be intermingled, but that might require a memoryview per element. I originally considered
+ctypes approach, but this worked out much more easily.
+
+
+"""
 
 
 
-import numpy as np
+
+""" DEVELOPMENT Notes:
+I think I can remove the numpy import if I use ctypes and connect it to the shm.buf memoryview. I
+don't know enough currently to make this work but it seems possible.
+
+https://stackoverflow.com/questions/9940859/fastest-way-to-pack-a-list-of-floats-into-bytes-in-python     **START HERE, read comments by Jonathan Hartley
+
+then:   https://stackoverflow.com/questions/59574816/obtaining-a-memoryview-object-from-a-ctypes-c-void-p-object
+
+https://docs.python.org/3/c-api/memoryview.html
+https://stackoverflow.com/questions/28984692/ctypes-from-buffer-with-memoryviews-in-python-2-7-and-python-3-4
+https://mattgwwalker.wordpress.com/2020/10/15/address-of-a-buffer-in-python/
+https://stackoverflow.com/questions/43810423/what-is-the-most-efficient-way-to-copy-an-externally-provided-buffer-to-bytes
+
+"""
+
+# import ctypes
+# import numpy as np
+
+import struct
 from multiprocessing import shared_memory
+
+dtypes = {'float64':'d',
+          'float32':'f',
+          'int64':'q',
+          'int32':'l',  # 'l' or 'i' are equivalent
+          'bool':'?',  # '?' is the correct format char
+          }
+
 
 class SharedMemNumpyArr():
     def __init__(self,name,num,dtype,reset_shm=False,varnames=None):
-        """Create or connect to a shared memory array via numpy buffer.
+        """Create or connect to a shared memory array via memoryview to the buffer of a single data
+        type.
 
         This approach is ~10x faster than using a ShareableList, but it only allows a single data
         type per shared memory area.
@@ -93,22 +138,22 @@ class SharedMemNumpyArr():
 
         if reset_shm, init will unlink any existing memory before creating new memory
 
-        Note: This could be modified to include multiple data types by using slices of the shared
-        memory buffer, example:
-            a1 = np.array([1.0,2.0,3.0])
-            a2 = np.array([4,5,6])
-            shm = shared_memory.SharedMemory(name='aaaaaaaa',create=True,size=a1.nbytes + a2.nbytes)
-            bf = np.ndarray(shape=a1.shape, dtype=a1.dtype, buffer=shm.buf[:a1.nbytes])   # <---- see here
-            bi = np.ndarray(shape=a2.shape, dtype=a2.dtype, buffer=shm.buf[a1.nbytes:])   # <---- see here
+        Note: This could be modified to include multiple data types by using slices of the
+        memoryview of the shared buffer. For example:
+            nbf = struct.calcsize('3f')  # three floats
+            nbi = struct.calcsize('3i')  # three ints
+            nbytes =  nbf + nbi
+            shm = shared_memory.SharedMemory(name='aaaaaaaa',create=True,size=nbytes)
+            bf = shm.buf[:nbf].cast('f')
+            bi = shm.buf[nbf:nbi].cast('i')
         """
 
         self.name = name
         self.num = num
         self.shape = (self.num,)
-        if isinstance(dtype,type):
-            self.dtype = np.dtype(dtype).name
         self.dtype = dtype
-        self.nbytes = self.num*np.dtype(dtype).itemsize
+        self.fmt = dtypes[dtype]
+        self.nbytes = struct.calcsize(self.fmt) * self.num
 
         if varnames is None:
             varnames = list(range(num))
@@ -130,33 +175,46 @@ class SharedMemNumpyArr():
                 tmp.unlink()
             self.shm = shared_memory.SharedMemory(name=self.name,create=False,size=self.nbytes)
 
-        # connect shared memory buffer to a numpy ndarray obj
-        self.arr = np.ndarray(shape=self.shape, dtype=self.dtype, buffer=self.shm.buf)
+        # Set up a memoryview cast to the correct data type
+        self.arr = self.shm.buf.cast(self.fmt)
+
+        # # connect shared memory buffer to a numpy ndarray obj
+        # if no_numpy:
+        #     self.arr = self.shm.buf.cast('d')
+        # else:
+        #     self.arr = np.ndarray(shape=self.shape, dtype=self.dtype, buffer=self.shm.buf)
+
+# TODO: is this an alternate to memoryview slicing?
+        # if self.dtype == 'float64':
+        #     print(type(self.shm._buf))
+        #     print(type(self.shm.buf.tobytes()))
+        #     self.arr_c = ctypes.cast(self.shm.buf.tobytes(),ctypes.POINTER(ctypes.c_double*self.num))
 
     def __getitem__(self,key):
-        return self.arr[self.varnames[key]]
+        return self.arr[ self.varnames[key] ]
 
-    def __setitem__(self,key,val):
-        self.arr[self.varnames[key]] = val
+    def __setitem__(self,key,value):
+        self.arr[ self.varnames[key] ] = value
 
     def keys(self):
         return self.varnames.keys()
 
     def getvar(self,varname):
-        idx = self.varnames[varname]
-        return self.arr[idx]
+        return self.arr[ self.varnames[varname] ]
 
     def setvar(self,varname,value):
-        idx = self.varnames[varname]
-        self.arr[idx] = value
+        self.arr[ self.varnames[varname] ] = value
 
     def close(self):
+        # To prevent a memoryview error message (cannot close exported pointers exist), arr is
+        # dereferenced from the shm.buf before close or unlink
+        self.arr.release()
         self.shm.close()
-        self.arr = []
+
 
     def unlink(self):
+        self.close()
         self.shm.unlink()
-        self.arr = []
 
 
 #%% ===== Examples =================================================================================
@@ -185,6 +243,10 @@ if __name__ == "__main__":
     # %timeit shm.arr[1]=8124.11  # indexing the array directly is a little faster
     shm.close()
     shm.unlink()
+
+    shm_list = shared_memory.ShareableList(10*[1.001])
+    # %timeit shm_list[1]
+    # %timeit shm_list[1]=8124.11
 
 
     # Example 2: Named variables
