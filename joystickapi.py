@@ -23,7 +23,25 @@ pyglet alternatively uses DirectInput to read joysticks:
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.2'
+__version__ = '1.0.3'
+
+"""
+The master version of this code is tracked in a separate repository - the latest version is
+available at:
+    http://gitlab/gitlab/reference/lib_pytools
+    -- or --
+    https://github.com/bgeiger99/lib_pytools
+
+Changelog
+=========
+
+1.0.3 (2023-02-02)
+------------------
+
+- cleaned up error reporting
+
+
+"""
 
 
 import ctypes
@@ -127,7 +145,7 @@ class Joystick:
         self.flags = flags
         self.name = name
         self.midval = (caps.wXmax-caps.wXmin)//2 # assumes all axes are the same
-        self.fresh = 0
+        self.freshness = 0
         self.ERROR = True
 
     def get_axis(self,j):
@@ -137,7 +155,7 @@ class Joystick:
         return self.btns[j] if j<self.n_btns else None
 
     def get_hat(self,j):
-        return self.hats[j] if j<self.n_hats else None
+        return self.hats[j] if j<self.n_hats else (None,None)
 
     def get_numaxes(self):
         return len(self.axes)
@@ -221,7 +239,7 @@ class JoystickReader:
 
     def _get_jsname_from_reg(self,szRegKey,jsid):
         """Fetch the name from registry."""
-        js_name = ''
+        js_name = 'unnamed'
         key = None
         if len(szRegKey) > 0:
             try:
@@ -277,7 +295,7 @@ class JoystickReader:
                 else:
                     # 4-way hat
                     js.hats[0] = self.hats_4way.get(self.info_ex.dwPOV,(0,0))
-            js.fresh =  (js.fresh + 1) % 256
+            js.freshness =  (js.freshness + 1) % 256
             js.ERROR=False
         else:
             # could not read joystick
@@ -320,7 +338,7 @@ if __name__ == '__main__':
             if stk.ERROR:
                 print("Cant read")
             else:
-                print(f"{mean_dt*1e6:5.1f}us {dt*1e6:5.1f}us {stk.fresh:3d} Joystick {jsid}: axes:[{ax}] btns:{stk.btns} hats:{stk.hats}")
+                print(f"{mean_dt*1e6:5.1f}us {dt*1e6:5.1f}us {stk.freshness:3d} Joystick {jsid}: axes:[{ax}] btns:{stk.btns} hats:{stk.hats}")
         else:
             print(f'{i} no joystick')
         time.sleep(.1)
