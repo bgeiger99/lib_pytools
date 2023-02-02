@@ -18,8 +18,8 @@ but the second is twice as fast as the first:
         val = shm.arr[0]
         shm.arr[0] = val
 
-This approach is between ~15x and ~55x faster than using shared_memory.ShareableList, but it only
-allows a single data type per shared memory area.
+This approach is between ~15x and ~55x faster than using shared_memory.ShareableList (python 3.11),
+but it only allows a single data type per shared memory area.
 
 """
 
@@ -28,11 +28,18 @@ allows a single data type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.2.0'
+__version__ = '1.3.0'
 
 """
 Changelog
 =========
+
+1.3.0 (2023-02-02)
+------------------
+
+- Documentation update. Add items() method.
+- adding uint16, int16, uint8, and int8 types
+
 
 1.2.0 (2022-08-15)
 ------------------
@@ -45,12 +52,28 @@ could be intermingled, but that might require a memoryview per element. I origin
 ctypes approach, but this worked out much more easily.
 
 
-"""
+
+Development Notes
+==================
+
+How to mix datatypes with memoryview:
+    import  struct
+    import itertools
+
+    mem_fmt = ['ii','dddd','iii']
+
+    idxs = [None] + list(itertools.accumulate([struct.calcsize(f) for f in mem_fmt]))
+    slices = [slice(idxs[i],idxs[i+1]) for i in range(len(idxs)-1)]
+    sz = struct.calcsize(''.join(mem_fmt))
+    buf = bytearray(sz)
+    M = memoryview(buf)
+
+    ints1 = M[slices[0]].cast('i')
+    dbls  = M[slices[1]].cast('d')
+    ints2 = M[slices[2]].cast('i')
 
 
 
-
-""" DEVELOPMENT Notes:
 I think I can remove the numpy import if I use ctypes and connect it to the shm.buf memoryview. I
 don't know enough currently to make this work but it seems possible.
 
@@ -72,9 +95,17 @@ import struct
 from multiprocessing import shared_memory
 
 dtypes = {'float64':'d',
+          'double':'d',
+          'float':'f',
           'float32':'f',
           'int64':'q',
+          'uint64':'Q',
           'int32':'l',  # 'l' or 'i' are equivalent
+          'uint32':'L', # 'L' or 'I' are equivalent
+          'int16':'h',
+          'uint16':'H',
+          'int8':'b',
+          'uint8':'B',
           'bool':'?',  # '?' is the correct format char
           }
 
@@ -156,6 +187,7 @@ class SharedMemDict():
         self.nbytes = struct.calcsize(self.fmt) * self.num
 
         if varnames is None:
+            # if no names for the variables are provided, the index numbers are used
             varnames = list(range(num))
         else:
             if len(varnames) != self.num:
@@ -190,20 +222,28 @@ class SharedMemDict():
         #     print(type(self.shm.buf.tobytes()))
         #     self.arr_c = ctypes.cast(self.shm.buf.tobytes(),ctypes.POINTER(ctypes.c_double*self.num))
 
-    def __getitem__(self,key):
+    def __getitem__(self, key):
         return self.arr[ self.varnames[key] ]
 
-    def __setitem__(self,key,value):
+    def __setitem__(self, key, value):
         self.arr[ self.varnames[key] ] = value
 
     def __len__(self):
         return self.num
 
+    def __iter__(self):
+        # return iter(self.)
+        raise NotImplementedError
+
     def keys(self):
         return self.varnames.keys()
 
     def values(self):
-        return self.arr.tolist()[:self.num]
+        return [self.arr[i] for i in range(self.num)]  # TODO: why can arr be longer than num?
+
+    def items(self):
+        for key in self.keys():
+            yield ( key, self.arr[self.varnames[key]])
 
     def getvar(self,varname):
         return self.arr[ self.varnames[varname] ]
@@ -216,7 +256,6 @@ class SharedMemDict():
         # dereferenced from the shm.buf before close or unlink
         self.arr.release()
         self.shm.close()
-
 
     def unlink(self):
         self.close()
