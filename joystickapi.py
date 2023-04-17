@@ -23,7 +23,7 @@ pyglet alternatively uses DirectInput to read joysticks:
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 
 """
 The master version of this code is tracked in a separate repository - the latest version is
@@ -34,6 +34,11 @@ available at:
 
 Changelog
 =========
+
+1.0.4 (2023-04-17)
+------------------
+
+- Fixed crash bug if num axes is zero.
 
 1.0.3 (2023-02-02)
 ------------------
@@ -172,6 +177,9 @@ class Joystick:
         """Output a convenient string with joystick button states."""
         return f"{sp}".join(["X" if b else "-" for b in self.btns])
 
+    def __repr__(self):
+        return f"Joystick(n_axes={self.n_axes},n_btns={self.n_btns},n_hats={self.n_hats},name='{self.name}',caps={self.caps},flags={self.flags}"
+
 
 #%%
 class JoystickReader:
@@ -278,8 +286,8 @@ class JoystickReader:
         flags = js.flags
         if joyGetPosEx(jsid, self.p_info_ex) == JOYERR_NOERROR:
 
-            js.axes[0] = (self.info_ex.dwXpos-js.midval)/(js.midval+1.0)
-            js.axes[1] = (self.info_ex.dwYpos-js.midval)/(js.midval+1.0)
+            if js.n_axes>0: js.axes[0] = (self.info_ex.dwXpos-js.midval)/(js.midval+1.0)
+            if js.n_axes>1: js.axes[1] = (self.info_ex.dwYpos-js.midval)/(js.midval+1.0)
             if flags['HASZ']: js.axes[2] = (self.info_ex.dwZpos-js.midval)/(js.midval+1.0)
             if flags['HASR']: js.axes[3] = (self.info_ex.dwRpos-js.midval)/(js.midval+1.0)
             if flags['HASU']: js.axes[4] = (self.info_ex.dwUpos-js.midval)/(js.midval+1.0)
