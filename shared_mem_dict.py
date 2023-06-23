@@ -28,11 +28,16 @@ but it only allows a single data type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.3.0'
+__version__ = '1.4.0'
 
 """
 Changelog
 =========
+
+1.4.0 (2023-05-29)
+------------------
+
+- Update type checking for varnames input
 
 1.3.0 (2023-02-02)
 ------------------
@@ -111,7 +116,7 @@ dtypes = {'float64':'d',
 
 
 class SharedMemDict():
-    def __init__(self,name,num,dtype,reset_shm=False,varnames=None):
+    def __init__(self,name,num,dtype,reset_shm=False,varnames=[]):
         """Create or connect to a shared memory dict. Values in the dict can be accessed by name or
         by numerical index; the values are all a single data type.
 
@@ -186,14 +191,19 @@ class SharedMemDict():
         self.fmt = dtypes[dtype]
         self.nbytes = struct.calcsize(self.fmt) * self.num
 
-        if varnames is None:
-            # if no names for the variables are provided, the index numbers are used
-            varnames = list(range(num))
-        else:
-            if len(varnames) != self.num:
-                raise ValueError(f"Number of variable names ({len(varnames)}) do not match num given in init call ({num}).")
-            if len(varnames) != len(set(varnames)):
-                raise ValueError(f"Found repeated variable names: {[varnames.pop(varnames.index(k)) for k in set(varnames)]}")
+        # if no names for the variables are provided, the index numbers are used
+        try:
+            if varnames is None or len(varnames)==0:
+                varnames = list(range(num))
+        except TypeError as e:
+            estr = f"'varnames' must be an iterable type (list, tuple) of length 0 or {num} ('num' argument)."
+            raise Exception(estr).with_traceback(e.__traceback__)
+
+        if len(varnames) != self.num:
+            raise ValueError(f"Number of variable names ({len(varnames)}) do not match num given in init call ({num}).")
+        if len(varnames) != len(set(varnames)):
+            raise ValueError(f"Found repeated variable names: {[varnames.pop(varnames.index(k)) for k in set(varnames)]}")
+
         self.varnames = {var:i for var,i in zip(varnames,range(num))}
 
         # create the shared memory
@@ -271,7 +281,8 @@ if __name__ == "__main__":
     shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
                'num':  10,  # number of variables in the shared memory array
                'dtype': 'float64',  # datatype of the shared memory array
-               'varnames': None, # optional names for each variable
+               'varnames': [], # optional names for each variable
+               # 'varnames': None, # optional names for each variable
                }
 
     shm = SharedMemDict(**shm_cfg)

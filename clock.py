@@ -27,6 +27,9 @@ NOTE JULY 2022: Python 3.11 when released will use higher precision timers with 
 Windows 8.1+. See the 'time' section: https://docs.python.org/3.11/whatsnew/3.11.html#time
 This module uses CreateWaitableTimerA, but the new timers with higher resolution call CreateWaitableTimerW
 
+Here's some more timing discussion that looks relevant for the next update to this code:
+    https://discuss.python.org/t/higher-resolution-timers-on-windows/16153/8
+
 """
 
 
@@ -35,8 +38,23 @@ This module uses CreateWaitableTimerA, but the new timers with higher resolution
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.4'
+__version__ = '1.0.5-dev'
 
+"""
+CHANGELOG
+
+1.0.5 xx-xx-xxxx
+----------------
+
+* remove numpy dependency in test code
+*  TODO: FIXME: the sleep loop should sleep by half the remaining time instead of 1ms at a time. with 3.11 sleep accuracy improvements, this should reduce iterations.
+                See: https://stackoverflow.com/questions/76506785/python-3-11-poor-time-sleep-resolution-on-windows
+                     https://pastebin.com/5cmMaJjb
+                     https://www.socsci.ru.nl/wilberth/computer/sleepAccuracy.html
+                     https://github.com/jgillick/python-pause/blob/master/pause/__init__.py
+                     https://gist.github.com/ra1nty/90b2162bf9777d9bc0db2ef0e44625b1
+
+"""
 
 
 import time
@@ -58,7 +76,7 @@ class Clock:
 
     Clock.sleep()                     # wait for next tick (efficient)  (this one's probably good enough)
     Clock.sleep_b()                   # wait for next tick (higher accuracy, higher cpu)
-    Clock.sleep_win_kernel_periodic() # very simple use of an auto resetting timer, works fine
+    Clock.sleep_win_kernel_periodic() # very simple use of an auto resetting timer, works fine but only at integer millisecond rates: 1000/5, 1000/6, 1000/7, etc..
     Clock.sleep_win_kernel_adj()      # alternate method; needs work
     Clock.sleep_win_kernel_subt()     # alternate method; needs work
     Clock.sleep_ns() # !! dont use this one
@@ -98,6 +116,7 @@ class Clock:
         if try_hi_res:
             # this is from the python 3.11 discussion on win8.1+ higher res timers.
             # I can't get it to work properly - it runs slow.
+            # See https://gist.github.com/ra1nty/90b2162bf9777d9bc0db2ef0e44625b1 for possible ideas to fix...
             self.otimer = kernel32.CreateWaitableTimerExW(NULL, NULL, 0x00000002, 0x1F0003)
             ret = kernel32.SetWaitableTimerEx(self.otimer, ctypes.byref(self.delay), interval, NULL, NULL, NULL, 0)
         else:
@@ -226,7 +245,7 @@ class Clock:
         """Run a test on the given method for sleep."""
 
         import math
-        import numpy as np
+        import statistics as st
         import psutil
 
         mean_dt=self.frame_length
@@ -284,8 +303,9 @@ class Clock:
         except (KeyboardInterrupt):
             print('\nExited Timing loop.')
 
-        dtvec = np.array(dtvec[2:]) # remove first two, its bad
-        print(f"\n    mean: {np.mean(dtvec):8.3g}, std dev: {np.std(dtvec):8.5g}, max: {max(dtvec):8.5g}, min:{min(dtvec):8.5g}, processor_load:{np.mean(proc_vec):5.2f}  HZmean={np.mean(1/dtvec):6.3f} HZstd={np.std(1/dtvec):6.3f}")
+        dtvec = dtvec[2:] # remove first two, its bad
+        rate  = [1/x for x in dtvec]
+        print(f"\n    mean: {st.mean(dtvec):8.3g}, std dev: {st.stdev(dtvec):8.5g}, max: {max(dtvec):8.5g}, min:{min(dtvec):8.5g}, processor_load:{st.mean(proc_vec):5.2f}  HZmean={st.mean(rate):6.3f} HZstd={st.stdev(rate):6.3f}")
         print('\n')
         return dtvec,proc_vec
 
