@@ -38,16 +38,19 @@ Here's some more timing discussion that looks relevant for the next update to th
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.0.5-dev'
+__version__ = '1.0.5'
+
 
 """
-CHANGELOG
+Changelog
+=========
 
-1.0.5 xx-xx-xxxx
-----------------
+1.0.5 (2023-07-31)
+------------------
 
-* remove numpy dependency in test code
-*  TODO: FIXME: the sleep loop should sleep by half the remaining time instead of 1ms at a time. with 3.11 sleep accuracy improvements, this should reduce iterations.
+* removed numpy dependency in test code
+* Add draft thoughts on fixing up for py311 (this release is to get a version down on the books):
+    * TODO: the sleep loop should sleep by half the remaining time instead of 1ms at a time. with 3.11 sleep accuracy improvements, this should reduce iterations.
                 See: https://stackoverflow.com/questions/76506785/python-3-11-poor-time-sleep-resolution-on-windows
                      https://pastebin.com/5cmMaJjb
                      https://www.socsci.ru.nl/wilberth/computer/sleepAccuracy.html

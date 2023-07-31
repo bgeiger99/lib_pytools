@@ -28,11 +28,16 @@ but it only allows a single data type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.4.0'
+__version__ = '1.4.1'
 
 """
 Changelog
 =========
+
+1.4.1 (2023-07-31)
+------------------
+
+- Fixed duplicate name definition check
 
 1.4.0 (2023-05-29)
 ------------------
@@ -201,8 +206,10 @@ class SharedMemDict():
 
         if len(varnames) != self.num:
             raise ValueError(f"Number of variable names ({len(varnames)}) do not match num given in init call ({num}).")
+
         if len(varnames) != len(set(varnames)):
-            raise ValueError(f"Found repeated variable names: {[varnames.pop(varnames.index(k)) for k in set(varnames)]}")
+            [varnames.pop(varnames.index(k)) for k in set(varnames)] # pop all names once; leftovers are the duplicates
+            raise ValueError(f"Found repeated variable names: {set(varnames)}")
 
         self.varnames = {var:i for var,i in zip(varnames,range(num))}
 
