@@ -101,6 +101,9 @@ https://stackoverflow.com/questions/43810423/what-is-the-most-efficient-way-to-c
 # import ctypes
 # import numpy as np
 
+
+import json
+import hashlib
 import struct
 from multiprocessing import shared_memory
 
@@ -194,7 +197,15 @@ class SharedMemDict():
         self.shape = (self.num,)
         self.dtype = dtype
         self.fmt = dtypes[dtype]
-        self.nbytes = struct.calcsize(self.fmt) * self.num
+
+        # Serialize the configuration
+        my_cfg = {'name':name,'num':num,'dtype':dtype,'varnames':varnames}
+        my_cfg_sha256 = hashlib.sha256(json.dumps(my_cfg).encode('utf-8')).digest()
+
+        # Calculate bytes required
+        self.nbytes_data = struct.calcsize(self.fmt) * self.num
+        self.nbytes_cfghash = len(my_cfg_sha256)
+        self.nbytes = self.nbytes_data + self.nbytes_cfghash
 
         # if no names for the variables are provided, the index numbers are used
         try:
@@ -221,11 +232,25 @@ class SharedMemDict():
             if reset_shm:
                 print(f'    shm reset: {self.name}')
                 tmp = shared_memory.SharedMemory(name=self.name)
-                tmp.unlink()
+                tmp.unlink() # Calling unlink here causes all those "cannot close" errors
             self.shm = shared_memory.SharedMemory(name=self.name,create=False,size=self.nbytes)
 
         # Set up a memoryview cast to the correct data type
-        self.arr = self.shm.buf.cast(self.fmt)
+        self.arr = self.shm.buf[:self.nbytes_data].cast(self.fmt)
+        self._cfg = self.shm.buf[self.nbytes_data:(self.nbytes_data+self.nbytes_cfghash)].cast('B')
+
+
+        all_zero = all([b==0 for b in self._cfg])
+        cfg_match = all([self._cfg[i]==my_cfg_sha256[i] for i in range(self.nbytes_cfghash)])
+        if all_zero:
+            print("Config check area was all zeros. Writing my hash.")
+            self._cfg[:self.nbytes_cfghash] = my_cfg_sha256
+        else:
+            if cfg_match:
+                print("Config check passed.")
+            else:
+                print("ERROR Config check failed.")
+
 
         # # connect shared memory buffer to a numpy ndarray obj
         # if no_numpy:
@@ -272,6 +297,7 @@ class SharedMemDict():
         # To prevent a memoryview error message (cannot close exported pointers exist), arr is
         # dereferenced from the shm.buf before close or unlink
         self.arr.release()
+        self._cfg.release()
         self.shm.close()
 
     def unlink(self):
