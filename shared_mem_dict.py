@@ -66,6 +66,9 @@ ctypes approach, but this worked out much more easily.
 Development Notes
 ==================
 
+2023-12-13: This is probably a better approach to shared memory with mixed types: 
+    https://docs.python.org/3/library/multiprocessing.html#module-multiprocessing.sharedctypes
+
 How to mix datatypes with memoryview:
     import  struct
     import itertools
