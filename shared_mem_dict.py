@@ -28,11 +28,17 @@ but it only allows a single data type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.4.1'
+__version__ = '1.5.0'
 
 """
 Changelog
 =========
+
+1.5.0 (2023-12-18)
+------------------
+
+- add hashed configuration check
+
 
 1.4.1 (2023-07-31)
 ------------------
@@ -66,7 +72,7 @@ ctypes approach, but this worked out much more easily.
 Development Notes
 ==================
 
-2023-12-13: This is probably a better approach to shared memory with mixed types: 
+2023-12-13: This is probably a better approach to shared memory with mixed types:
     https://docs.python.org/3/library/multiprocessing.html#module-multiprocessing.sharedctypes
 
 How to mix datatypes with memoryview:
@@ -125,9 +131,11 @@ dtypes = {'float64':'d',
           'bool':'?',  # '?' is the correct format char
           }
 
+class SharedMemoryConfigurationError(Exception):
+    pass
 
 class SharedMemDict():
-    def __init__(self,name,num,dtype,reset_shm=False,varnames=[]):
+    def __init__(self,name,num,dtype,reset_shm=False,varnames=[],verbose=False):
         """Create or connect to a shared memory dict. Values in the dict can be accessed by name or
         by numerical index; the values are all a single data type.
 
@@ -204,6 +212,7 @@ class SharedMemDict():
         # Serialize the configuration
         my_cfg = {'name':name,'num':num,'dtype':dtype,'varnames':varnames}
         my_cfg_sha256 = hashlib.sha256(json.dumps(my_cfg).encode('utf-8')).digest()
+        self.my_cfg_sha256 = my_cfg_sha256
 
         # Calculate bytes required
         self.nbytes_data = struct.calcsize(self.fmt) * self.num
@@ -246,13 +255,18 @@ class SharedMemDict():
         all_zero = all([b==0 for b in self._cfg])
         cfg_match = all([self._cfg[i]==my_cfg_sha256[i] for i in range(self.nbytes_cfghash)])
         if all_zero:
-            print("Config check area was all zeros. Writing my hash.")
+            if verbose:
+                print(f"Config check area was all zeros. Writing my_cfg_sha256: {my_cfg_sha256.hex()}")
             self._cfg[:self.nbytes_cfghash] = my_cfg_sha256
-        else:
-            if cfg_match:
-                print("Config check passed.")
-            else:
-                print("ERROR Config check failed.")
+        elif not cfg_match:
+            estr = f"Shared Memory configuration does not match source. Check that the " \
+                   f"configuration is identical (order and case). " \
+                   f" "
+                       
+                       "The configuration used by" \
+                   f" this instance is:\n\n{my_cfg}"
+            self.close()
+            raise SharedMemoryConfigurationError(estr)
 
 
         # # connect shared memory buffer to a numpy ndarray obj
@@ -307,10 +321,27 @@ class SharedMemDict():
         self.close()
         self.shm.unlink()
 
+def _demo_process(cfg):
+    import time
+    """This is defined here to avoid an error when running the example in iPython."""
+    shm = SharedMemDict(**cfg)
+    n=400
+    print(shm.my_cfg_sha256)
+    for i in range(n):
+        shm[7] = float(i)
+        # print(f"{shm[7]}")
+        time.sleep(0.01)
+    shm.close()
+
 
 #%% ===== Examples =================================================================================
 
 if __name__ == "__main__":
+
+    from multiprocessing import Process
+    import time
+
+
 
     # Example 1: unnammed array
     print("\n\nExample 1: unnammed array")
@@ -320,6 +351,7 @@ if __name__ == "__main__":
                'varnames': [], # optional names for each variable
                # 'varnames': None, # optional names for each variable
                }
+
 
     shm = SharedMemDict(**shm_cfg)
     print("    Set array items by index number.")
@@ -333,6 +365,15 @@ if __name__ == "__main__":
     print(f"    getvar():    shm.getvar(0) -> {shm.getvar(0)} (equivalent to dict key)")
     print(f" Get all values:  shm.values(): {shm.values()}")
     print(f" List all keys:   shm.keys(): {shm.keys()}")
+    # print(shm.my_cfg_sha256)
+
+    p = Process(target=_demo_process,args=(shm_cfg,))
+    p.start()
+    time.sleep(1.0)
+    for i in range(10):
+        print(f"Shared from demo_process: shm[7] = {shm[7]}")
+        time.sleep(0.25)
+    p.join()
     # %timeit shm[1]
     # %timeit shm.arr[1]  # indexing the array directly is 2-3x faster than using the dict key
     # %timeit shm.getvar(1)
@@ -369,4 +410,21 @@ if __name__ == "__main__":
     shm.close()
     shm.unlink()
 
+
+    # Example 3 - config mismatch
+    print("\n\nExample 3: Configuration Error Test")
+    shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
+               'num':  10,  # number of variables in the shared memory array
+               'dtype': 'float64',  # datatype of the shared memory array
+               'varnames': ['ab1','ab2','alt','mzl','dop','los','psi','uw','orange','bolt',], # optional names for each variable
+               }
+
+    shm1 = SharedMemDict(**shm_cfg,verbose=True)
+    shm_cfg['varnames'][0]='abb1' # introduce a name change
+    try:
+        shm2 = SharedMemDict(**shm_cfg) # This will cause a config error
+    except SharedMemoryConfigurationError as e:
+        print(f"Caught SharedMemoryConfigurationError error:\n\n {e}")
+    shm1.close()
+    shm1.unlink()
 
