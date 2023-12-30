@@ -254,8 +254,9 @@ class SharedMemDict():
             self.shm = shared_memory.SharedMemory(name=self.name,create=True,size=self.nbytes)
             self.shm.buf[:] = bytearray(self.nbytes) # init to zeros if we are creating
         except FileExistsError:
-            if reset_shm and verbose:
-                print(f'    shm reset: {self.name}')
+            if reset_shm:
+                if verbose:
+                    print(f'    shm reset: {self.name}')
                 tmp = shared_memory.SharedMemory(name=self.name)
                 tmp.unlink() # Calling unlink here causes all those "cannot close" errors
             self.shm = shared_memory.SharedMemory(name=self.name,create=False,size=self.nbytes)
