@@ -220,7 +220,8 @@ class SharedMemDict():
 
         # Serialize the configuration
         my_cfg = {'name':name,'num':num,'dtype':dtype,'varnames':varnames}
-        my_cfg_sha256 = hashlib.sha256(json.dumps(my_cfg).encode('utf-8')).digest()
+        my_cfg_json = json.dumps(my_cfg).encode('utf-8')
+        my_cfg_sha256 = hashlib.sha256(my_cfg_json).digest()
         self.my_cfg_sha256 = my_cfg_sha256
 
         # Calculate bytes required
@@ -275,7 +276,7 @@ class SharedMemDict():
                 self._cfg[:self.nbytes_cfghash] = my_cfg_sha256
             elif cfg_match:
                 if verbose:
-                    print("Config hash matched to existing hash.")
+                    print("Config hash matched to existing hash: {my_cfg_sha256.hex()}")
             else:
                 estr = f"    Shared Memory configuration does not match source configuration. " \
                         "Check that the configuration used by this instance is identical " \
