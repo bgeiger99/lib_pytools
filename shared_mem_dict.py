@@ -37,7 +37,7 @@ Changelog
 1.5.0 (2023-12-18)
 ------------------
 
-- add hashed configuration check
+- add configuration check
 
 
 1.4.1 (2023-07-31)
