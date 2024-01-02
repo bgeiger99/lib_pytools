@@ -14,8 +14,7 @@ set BASE_PATH=%~dp0
 
 rem ===========================================================================
 
-python "shared_mem_dict_viewer.py"    --demo-data
-
+python "shared_mem_dict_viewer.py"    
 
 :end
 timeout /t 5
