@@ -3,7 +3,22 @@
 Created on Sun Dec 31 14:34:26 2023
 
 @author: brg
+
 """
+
+__version__ = '1.0.0'
+
+"""
+Changelog
+=========
+
+1.0.0 (2024-01-02)
+------------------
+
+- Initial GUI Release
+
+"""
+
 
 import dearpygui.dearpygui as dpg
 import toml

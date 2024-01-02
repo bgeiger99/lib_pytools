@@ -28,6 +28,7 @@ but it only allows a single data type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
+
 __version__ = '1.5.0'
 
 """
@@ -38,6 +39,7 @@ Changelog
 ------------------
 
 - add configuration check including names, number, dtype, and version
+- created GUI viewer for shared memory ares: shared_mem_dict_viewer.py
 
 1.4.1 (2023-07-31)
 ------------------
