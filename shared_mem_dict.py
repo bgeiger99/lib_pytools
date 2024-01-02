@@ -37,8 +37,7 @@ Changelog
 1.5.0 (2023-12-18)
 ------------------
 
-- add configuration check
-
+- add configuration check including names, number, dtype, and version
 
 1.4.1 (2023-07-31)
 ------------------
@@ -216,13 +215,19 @@ class SharedMemDict():
         self.num = num
         self.shape = (self.num,)
         self.dtype = dtype
-        self.fmt = dtypes[dtype]
+        self.fmt = dtypes.get(dtype,None)
+        
+        if self.fmt is None:
+            raise SharedMemoryConfigurationError(f"Invalid data type specified: '{dtype}'. You must use one of the following:\n {dtypes}")
 
         # Serialize the configuration
-        my_cfg = {'name':name,'num':num,'dtype':dtype,'varnames':varnames}
+        my_cfg = {'name':name,'num':num,'dtype':dtype,'varnames':varnames,'version':__version__}
         my_cfg_json = json.dumps(my_cfg).encode('utf-8')
         my_cfg_sha256 = hashlib.sha256(my_cfg_json).digest()
         self.my_cfg_sha256 = my_cfg_sha256
+        
+        if verbose:
+            print(my_cfg)
 
         # Calculate bytes required
         self.nbytes_data = struct.calcsize(self.fmt) * self.num
@@ -236,16 +241,16 @@ class SharedMemDict():
                 varnames = list(range(num))
         except TypeError as e:
             estr = f"'varnames' must be an iterable type (list, tuple) of length 0 or {num} ('num' argument)."
-            raise Exception(estr).with_traceback(e.__traceback__)
+            raise SharedMemoryConfigurationError(estr).with_traceback(e.__traceback__)
             
         # Check for mismatch between length of varirable names and expected number of names
         if len(varnames) != self.num:
-            raise ValueError(f"Number of variable names (len(varnames)={len(varnames)}) do not match expected number (num={num}).")
+            raise SharedMemoryConfigurationError(f"Number of variable names (len(varnames)={len(varnames)}) do not match expected number (num={num}).")
 
         # Check for duplicate names
         if len(varnames) != len(set(varnames)):
             [varnames.pop(varnames.index(k)) for k in set(varnames)] # pop all names once; leftovers are the duplicates
-            raise ValueError(f"Found repeated variable names: {set(varnames)}")
+            raise SharedMemoryConfigurationError(f"Found repeated variable names: {set(varnames)}")
 
         # Create the variable reference dict (name:index)
         self.varnames = {var:i for var,i in zip(varnames,range(num))}
