@@ -28,11 +28,18 @@ but it only allows a single data type per shared memory area.
 #    http://gitlab/gitlab/reference/lib_pytools
 #    -- or --
 #    https://github.com/bgeiger99/lib_pytools
-__version__ = '1.4.1'
+
+__version__ = '1.5.0'
 
 """
 Changelog
 =========
+
+1.5.0 (2023-12-18)
+------------------
+
+- add configuration check including names, number, dtype, and version
+- created GUI viewer for shared memory ares: shared_mem_dict_viewer.py
 
 1.4.1 (2023-07-31)
 ------------------
@@ -65,6 +72,9 @@ ctypes approach, but this worked out much more easily.
 
 Development Notes
 ==================
+
+2023-12-13: This is probably a better approach to shared memory with mixed types:
+    https://docs.python.org/3/library/multiprocessing.html#module-multiprocessing.sharedctypes
 
 How to mix datatypes with memoryview:
     import  struct
@@ -101,6 +111,9 @@ https://stackoverflow.com/questions/43810423/what-is-the-most-efficient-way-to-c
 # import ctypes
 # import numpy as np
 
+
+import json
+import hashlib
 import struct
 from multiprocessing import shared_memory
 
@@ -119,9 +132,11 @@ dtypes = {'float64':'d',
           'bool':'?',  # '?' is the correct format char
           }
 
+class SharedMemoryConfigurationError(Exception):
+    pass
 
 class SharedMemDict():
-    def __init__(self,name,num,dtype,reset_shm=False,varnames=[]):
+    def __init__(self,name,num,dtype,reset_shm=False,varnames=[],check_config=True,verbose=False):
         """Create or connect to a shared memory dict. Values in the dict can be accessed by name or
         by numerical index; the values are all a single data type.
 
@@ -142,6 +157,15 @@ class SharedMemDict():
             A list of names for each shared memory array element. This is used to provide dict-style
             access to individual elements. The default is None. The length of this list must be
             equal to num.
+        check_config : bool, Optional
+            If True, calculate the sha256 hash of the configuration and compare
+            it to the hash stored in a separate block of the shared memory
+            area. If the hashes differ, raise the SharedMemoryConfigurationError.
+            The default is True (always check). This should only be disabled if
+            debugging is required.
+        verbose : bool, Optional
+            If True, print additional information during object creation. The 
+            default is False.
 
         Returns
         -------
@@ -193,39 +217,82 @@ class SharedMemDict():
         self.num = num
         self.shape = (self.num,)
         self.dtype = dtype
-        self.fmt = dtypes[dtype]
-        self.nbytes = struct.calcsize(self.fmt) * self.num
+        self.fmt = dtypes.get(dtype,None)
+        
+        if self.fmt is None:
+            raise SharedMemoryConfigurationError(f"Invalid data type specified: '{dtype}'. You must use one of the following:\n {dtypes}")
 
-        # if no names for the variables are provided, the index numbers are used
+        # Serialize the configuration
+        my_cfg = {'name':name,'num':num,'dtype':dtype,'varnames':varnames,'version':__version__}
+        my_cfg_json = json.dumps(my_cfg).encode('utf-8')
+        my_cfg_sha256 = hashlib.sha256(my_cfg_json).digest()
+        self.my_cfg_sha256 = my_cfg_sha256
+        
+        if verbose:
+            print(my_cfg)
+
+        # Calculate bytes required
+        self.nbytes_data = struct.calcsize(self.fmt) * self.num
+        self.nbytes_cfghash = len(my_cfg_sha256)
+        self.nbytes = self.nbytes_data + self.nbytes_cfghash
+
+        # If no variable names were supplied, make the default variable names
+        # consisting of a list of int starting at 0.
         try:
             if varnames is None or len(varnames)==0:
                 varnames = list(range(num))
         except TypeError as e:
             estr = f"'varnames' must be an iterable type (list, tuple) of length 0 or {num} ('num' argument)."
-            raise Exception(estr).with_traceback(e.__traceback__)
-
+            raise SharedMemoryConfigurationError(estr).with_traceback(e.__traceback__)
+            
+        # Check for mismatch between length of varirable names and expected number of names
         if len(varnames) != self.num:
-            raise ValueError(f"Number of variable names ({len(varnames)}) do not match num given in init call ({num}).")
+            raise SharedMemoryConfigurationError(f"Number of variable names (len(varnames)={len(varnames)}) do not match expected number (num={num}).")
 
+        # Check for duplicate names
         if len(varnames) != len(set(varnames)):
             [varnames.pop(varnames.index(k)) for k in set(varnames)] # pop all names once; leftovers are the duplicates
-            raise ValueError(f"Found repeated variable names: {set(varnames)}")
+            raise SharedMemoryConfigurationError(f"Found repeated variable names: {set(varnames)}")
 
+        # Create the variable reference dict (name:index)
         self.varnames = {var:i for var,i in zip(varnames,range(num))}
 
-        # create the shared memory
+        # Create the shared memory
         try:
             self.shm = shared_memory.SharedMemory(name=self.name,create=True,size=self.nbytes)
             self.shm.buf[:] = bytearray(self.nbytes) # init to zeros if we are creating
         except FileExistsError:
             if reset_shm:
-                print(f'    shm reset: {self.name}')
+                if verbose:
+                    print(f'    shm reset: {self.name}')
                 tmp = shared_memory.SharedMemory(name=self.name)
-                tmp.unlink()
+                tmp.unlink() # Calling unlink here causes all those "cannot close" errors
             self.shm = shared_memory.SharedMemory(name=self.name,create=False,size=self.nbytes)
 
         # Set up a memoryview cast to the correct data type
-        self.arr = self.shm.buf.cast(self.fmt)
+        self.arr = self.shm.buf[:self.nbytes_data].cast(self.fmt)
+        self._cfg = self.shm.buf[self.nbytes_data:(self.nbytes_data+self.nbytes_cfghash)].cast('B')
+
+        # Check for a matching configuration hash
+        if check_config:
+            all_zero = all([b==0 for b in self._cfg])
+            cfg_match = all([self._cfg[i]==my_cfg_sha256[i] for i in range(self.nbytes_cfghash)])
+            if all_zero:
+                if verbose:
+                    print(f"Config check area was all zeros. Writing my_cfg_sha256: {my_cfg_sha256.hex()}")
+                self._cfg[:self.nbytes_cfghash] = my_cfg_sha256
+            elif cfg_match:
+                if verbose:
+                    print("Config hash matched to existing hash: {my_cfg_sha256.hex()}")
+            else:
+                estr = f"    Shared Memory configuration does not match source configuration. " \
+                        "Check that the configuration used by this instance is identical " \
+                        "in variable name, case, and order. The configuration " \
+                       f"used by this instance is:\n\n{my_cfg}\n\n" \
+                       f"    This instance's config sha256 hash is: {my_cfg_sha256.hex()}\n" \
+                       f"    The existing config sha256 hash is:    {self._cfg.hex()}" 
+                self.close()
+                raise SharedMemoryConfigurationError(estr)
 
         # # connect shared memory buffer to a numpy ndarray obj
         # if no_numpy:
@@ -256,40 +323,63 @@ class SharedMemDict():
         return self.varnames.keys()
 
     def values(self):
-        return [self.arr[i] for i in range(self.num)]  # TODO: why can arr be longer than num?
+        return list(self.arr[:self.num])
+        # return [self.arr[i] for i in range(self.num)]  # NOTE: arr be longer than num
 
     def items(self):
         for key in self.keys():
             yield ( key, self.arr[self.varnames[key]])
 
-    def getvar(self,varname):
-        return self.arr[ self.varnames[varname] ]
+    def getvar(self,key):
+        return self.arr[ self.varnames[key] ]
 
-    def setvar(self,varname,value):
-        self[varname] = value
+    def setvar(self,key,value):
+        # self[key] = value  # this is slow
+        self.arr[ self.varnames[key] ] = value
 
     def close(self):
         # To prevent a memoryview error message (cannot close exported pointers exist), arr is
         # dereferenced from the shm.buf before close or unlink
         self.arr.release()
+        self._cfg.release()
         self.shm.close()
 
     def unlink(self):
         self.close()
         self.shm.unlink()
 
+#%% 
+def _demo_process(cfg):
+    import time
+    """Demo: Increment the 7th item in a shared list. This is defined here to 
+    avoid an error when running the example in iPython."""
+    
+    # Connect to the pre-defined shared instance
+    shm = SharedMemDict(**cfg)
+    n=400
+    # print(shm.my_cfg_sha256)
+    # Increment 
+    for i in range(n):
+        shm[7] = float(i)
+        # print(f"{shm[7]}")
+        time.sleep(0.01)
+    shm.close()
+
 
 #%% ===== Examples =================================================================================
 
 if __name__ == "__main__":
 
+    from multiprocessing import Process
+    import time
+
     # Example 1: unnammed array
-    print("\n\nExample 1: unnammed array")
+    print("\n\n===========================================")
+    print("Example 1: unnammed array")
     shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
                'num':  10,  # number of variables in the shared memory array
                'dtype': 'float64',  # datatype of the shared memory array
-               'varnames': [], # optional names for each variable
-               # 'varnames': None, # optional names for each variable
+               'varnames': [], # optional names for each variable - if empty, indices count up from 0
                }
 
     shm = SharedMemDict(**shm_cfg)
@@ -302,8 +392,22 @@ if __name__ == "__main__":
     print(f"    Dict key:    shm[0]        -> {shm[0]}")
     print(f"    Array Index: shm.arr[0]    -> {shm.arr[0]}")
     print(f"    getvar():    shm.getvar(0) -> {shm.getvar(0)} (equivalent to dict key)")
-    print(f" Get all values:  shm.values(): {shm.values()}")
     print(f" List all keys:   shm.keys(): {shm.keys()}")
+    print(f" Get all values:  shm.values(): {shm.values()}")
+    print(f"    getvar() : {[shm.getvar(i) for i in range(shm.num)]}")
+    print(f" __getitem__ : {[shm[i] for i in range(shm.num)]}")
+    print(f" array index : {[shm.arr[i] for i in range(shm.num)]}")
+    # print(shm.my_cfg_sha256)
+
+    print("\n    Spawning demo_process() in a new process to write values to shared memory...")
+    p = Process(target=_demo_process,args=(shm_cfg,))
+    p.start()
+    time.sleep(1.0)
+    print("    Reading values from shared memory:")
+    for i in range(10):
+        print(f"        Shared from demo_process: shm[7] = {shm[7]}")
+        time.sleep(0.25)
+    p.join()
     # %timeit shm[1]
     # %timeit shm.arr[1]  # indexing the array directly is 2-3x faster than using the dict key
     # %timeit shm.getvar(1)
@@ -320,7 +424,8 @@ if __name__ == "__main__":
 
 
     # Example 2: Named variables
-    print("\n\nExample 2: Named Variables")
+    print("\n\n===========================================")
+    print("Example 2: Named Variables")
     shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
                'num':  10,  # number of variables in the shared memory array
                'dtype': 'float64',  # datatype of the shared memory array
@@ -340,4 +445,22 @@ if __name__ == "__main__":
     shm.close()
     shm.unlink()
 
+
+    # Example 3 - config mismatch
+    print("\n\n===========================================")
+    print("Example 3: Configuration Error Test")
+    shm_cfg = {'name': 'shm_area_test1_8u235',  # shared memory location identifier - can be anything you want
+               'num':  10,  # number of variables in the shared memory array
+               'dtype': 'float64',  # datatype of the shared memory array
+               'varnames': ['ab1','ab2','alt','mzl','dop','los','psi','uw','orange','bolt',], # optional names for each variable
+               }
+
+    shm1 = SharedMemDict(**shm_cfg,verbose=True)
+    shm_cfg['varnames'][0]='abb1' # introduce a name change
+    try:
+        shm2 = SharedMemDict(**shm_cfg) # This will cause a config error
+    except SharedMemoryConfigurationError as e:
+        print(f"Caught SharedMemoryConfigurationError error:\n\n {e}")
+    shm1.close()
+    shm1.unlink()
 
