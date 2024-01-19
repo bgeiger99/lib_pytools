@@ -146,6 +146,8 @@ class main_window:
 
                         try:
                             self.shm[subsection] = SharedMemDict(**self.cfg_dict[section][subsection])  # Create a new SharedMemDict for the subsection
+                        except TypeError as e:
+                            print(f"Skipping subsection {subsection} due to error: {e}")
                         except SharedMemoryConfigurationError as e:
                             print(f'got an error: {e}')
                             cfg_state_str = f"INVALID Configuration: {e}"
@@ -199,6 +201,9 @@ class main_window:
 
     def update_data_table(self, subsection):
         if subsection in self.shm and self.shm[subsection] is not None:
+            if subsection not in self.table_vals_key:
+                self.table_vals_key[subsection] = {}
+
             for k,v in self.table_vals_key[subsection].items():
                 dpg.set_value(v,self.shm[subsection][k])
     

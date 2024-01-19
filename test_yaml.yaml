@@ -2,9 +2,9 @@
 # Spacing is ignored
 
 # Set the Display Host Information
-#[ext_display]
-  #[ext_display.xplane]
-    #xpHost = "127.0.0.1"
+[ext_display]
+  [ext_display.xplane]
+    xpHost = "127.0.0.1"
     #xpHost: 172.16.0.140
 
 # Set up shared memory
