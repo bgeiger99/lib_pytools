@@ -308,7 +308,7 @@ class BaseSimpleDisplay:
 
         if app_icon_filename is not None:
             try:
-                icon_filename = os.path.abspath(os.path.join(os.path.dirname(__file__),"simple_pygame_display_assets/piac_icon.png"))
+                icon_filename = os.path.abspath(os.path.join(os.path.dirname(__file__),"assets/piac_icon.png"))
                 with open(icon_filename, 'r') as f:
                     # doing it this way because passing a filename seems to be problematic for pygame.image.load
                     programIcon = pygame.image.load(f)

@@ -1,0 +1,60 @@
+[ext_display.xplane]
+xpHost = "172.16.0.140"
+
+[shr_mem.joystick_axes_input]
+dtype = "float64"
+name = "shm_JoyStick_axes_239"
+num = 8
+
+[shr_mem.joystick_btns_input]
+dtype = "bool"
+name = "shm_JoyStick_btns_239"
+num = 32
+
+[shr_mem.joystick_hats_input]
+dtype = "int32"
+name = "shm_JoyStick_hats_239"
+num = 16
+
+[shr_mem.sim_io]
+dtype = "float64"
+name = "shm_sim_data_io_239"
+num = 36
+varnames = [
+  "time",
+  "u_mps",
+  "v_mps",
+  "w_mps",
+  "p_dps",
+  "q_dps",
+  "r_dps",
+  "roll_deg",
+  "pitch_deg",
+  "yaw_deg",
+  "x_earth_m",
+  "y_earth_m",
+  "z_earth_m",
+  "accx_mps2",
+  "accy_mps2",
+  "accz_mps2",
+  "lat_deg",
+  "lon_deg",
+  "alt_m",
+  "v_north_mps",
+  "v_east_mps",
+  "v_down_mps",
+  "TAS_mps",
+  "alpha_deg",
+  "beta_deg",
+  "oat_degC",
+  "elevon_port_deg",
+  "elevon_stbd_deg",
+  "elevon_sym_deg",
+  "elevon_dif_deg",
+  "alt_agl_ref",
+  "terr_ht_m",
+  "terr_nrml_east",
+  "terr_nrml_north",
+  "terr_nrml_up",
+  "over_water"
+]

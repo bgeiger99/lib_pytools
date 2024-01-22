@@ -87,7 +87,8 @@ class main_window:
                                                 user_data=self,height=-1,width=10000,
                                                 )
                         with dpg.file_dialog(directory_selector=False, 
-                                            show=False, 
+                                            show=False,
+                                            label="Select TOML Configuration File", 
                                             modal=True,
                                             callback=lambda sender, app_data: self.get_shm_cfg(sender, app_data, self, parent_tab_bar=tb), 
                                             id="file_dialog_id", 
@@ -217,12 +218,16 @@ class main_window:
         pass
     
     def close_shm(self):
-        for key, resource in self.shm.items():
-            resource.close()    
+        if self.shm is not None:
+            for key, resource in self.shm.items():
+                resource.close()
 
 def run_gui():
     
     dpg.create_context()
+
+    with dpg.font_registry():
+        default_font = dpg.add_font(r"assets\B612Mono-Regular.ttf", 14)
 
     # Theme
     with dpg.theme() as global_theme:
@@ -241,12 +246,15 @@ def run_gui():
 
     dpg.bind_theme(global_theme)
 
-    dpg.create_viewport(title='Shared Memory Viewer', width=1200, height=800)
+    dpg.create_viewport(title='Shared Memory Viewer', 
+                        small_icon=r"assets\piac_icon.ico",
+                        large_icon=r"assets\piac_icon.ico",
+                        width=1200, height=800)
     
     MainWindow = main_window()
     MainWindow.create()
     dpg.set_primary_window("__main_window", True)
-    
+    dpg.bind_font(default_font)
     
     dpg.setup_dearpygui()
     dpg.show_viewport()
