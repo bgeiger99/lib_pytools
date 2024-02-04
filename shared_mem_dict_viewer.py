@@ -44,24 +44,26 @@ def cancel_callback(sender, app_data):
     print('Cancel was clicked.')
     print("Sender: ", sender)
     print("App Data: ", app_data)
-    
+
 default_toml_config='name = "shm_area_test1_8u235"\nnum = 10\ndtype = "float64"\nvarnames = [ "ab1", "ab2", "alt", "mzl", "dop", "los", "psi", "uw", "orange", "bolt",]\n'
-    
+
 
 class main_window:
-    
+
     def __init__(self):
         self.cfg_dict = {}
         self.cfg_filename = ''
         self.shm_cfg = {}
-        self.shm = None         
+        self.shm = None
         self.table_rows = {}
         self.table_vals_key={}
 
+        self.skip_update = False
+
 
     def create(self):
-        with dpg.window(label="Shared Memory Viewer",  
-                        pos=(100,100), 
+        with dpg.window(label="Shared Memory Viewer",
+                        pos=(100,100),
                         tag="__main_window"):
             # with dpg.menu_bar():
             #     dpg.add_menu_item(label="Open...",callback=self.select_shm_cfg)
@@ -74,7 +76,7 @@ class main_window:
                         with dpg.group(tag="cfg_group"):
                             with dpg.group(horizontal=True):
                                 dpg.add_text('Config Validity:')
-                                self.cfg_valid_status = dpg.add_text('-----') 
+                                self.cfg_valid_status = dpg.add_text('-----')
                             with dpg.group(horizontal=True):
                                 dpg.add_button(label="File Explorer", callback=lambda: dpg.show_item("file_dialog_id"))
                                 dpg.add_text('or paste TOML config below:')
@@ -86,35 +88,35 @@ class main_window:
                                                 on_enter = False,
                                                 user_data=self,height=-1,width=10000,
                                                 )
-                        with dpg.file_dialog(directory_selector=False, 
+                        with dpg.file_dialog(directory_selector=False,
                                             show=False,
-                                            label="Select TOML Configuration File", 
+                                            label="Select TOML Configuration File",
                                             modal=True,
-                                            callback=lambda sender, app_data: self.get_shm_cfg(sender, app_data, self, parent_tab_bar=tb), 
-                                            id="file_dialog_id", 
+                                            callback=lambda sender, app_data: self.get_shm_cfg(sender, app_data, self, parent_tab_bar=tb),
+                                            id="file_dialog_id",
                                             width=800 ,
-                                            height=600, 
+                                            height=600,
                                             cancel_callback=cancel_callback,
                                             user_data=self):
                             dpg.add_file_extension("", color=(0, 150, 255, 255))
                             dpg.add_file_extension(".*", color=(150, 255, 150, 255))
                             dpg.add_file_extension(".toml", color=(0, 255, 0, 255))
                             dpg.add_file_extension(".yaml", color=(255, 255, 0, 210))
-                        
-                
+
+
 
     @staticmethod
     def select_shm_cfg():
         dpg.show_item("file_dialog_id")
-        
+
     @staticmethod
     def get_shm_cfg(sender,app_data,user_data, parent_tab_bar):
-        filename = list(app_data['selections'].values())[0]  
+        filename = list(app_data['selections'].values())[0]
         user_data.cfg_filename = filename
         cfg_dict = toml.load(filename)
         dpg.set_value("InputTOMLText",toml.dumps(cfg_dict))
         user_data.load_shm_config(cfg_dict, parent_tab_bar)
-        
+
     @staticmethod
     def get_shm_cfg_toml_text_input(sender,app_data,user_data, parent_tab_bar):
         try:
@@ -130,6 +132,7 @@ class main_window:
         self.shm = {}  # Change this to a dictionary
 
         if self.cfg_dict:
+            self.skip_update = True
             for section in self.cfg_dict:
                 print(f"section: {section}")
                 # Check if the section is a dictionary (which means it has subsections)
@@ -160,8 +163,9 @@ class main_window:
         else:
             cfg_state_str = "INVALID Configuration"
         dpg.set_value(self.cfg_valid_status,cfg_state_str)
-    
-        
+        self.skip_update = False
+
+
     def make_tabs(self, subsection, parent_tab_bar):
         with dpg.tab(label=subsection, parent=parent_tab_bar):
             print(f"{subsection} tab added!")
@@ -181,7 +185,7 @@ class main_window:
 
     def make_data_table(self, subsection):
         self.clear_data_table(subsection)
-        with dpg.table(header_row=True, row_background=True, borders_innerH=True, borders_outerH=True, 
+        with dpg.table(header_row=True, row_background=True, borders_innerH=True, borders_outerH=True,
                        borders_innerV=True, borders_outerV=True, delay_search=True) as self.data_tables[subsection]:
             dpg.add_table_column(label=subsection)
             dpg.add_table_column(label="Value")
@@ -195,7 +199,7 @@ class main_window:
 
 
     def update_data_tables(self):
-        if self.cfg_dict:
+        if self.cfg_dict and not self.skip_update:
             for section in self.cfg_dict:
                 for subsection in self.cfg_dict[section]:
                     self.update_data_table(subsection)
@@ -207,23 +211,23 @@ class main_window:
 
             for k,v in self.table_vals_key[subsection].items():
                 dpg.set_value(v,self.shm[subsection][k])
-    
-    
+
+
     @staticmethod
     def show_shm_info_window():
         pass
-    
+
     @staticmethod
     def stream_data():
         pass
-    
+
     def close_shm(self):
         if self.shm is not None:
             for key, resource in self.shm.items():
                 resource.close()
 
 def run_gui():
-    
+
     dpg.create_context()
 
     with dpg.font_registry():
@@ -246,27 +250,28 @@ def run_gui():
 
     dpg.bind_theme(global_theme)
 
-    dpg.create_viewport(title='Shared Memory Viewer', 
+    dpg.create_viewport(title='Shared Memory Viewer',
                         small_icon=r"assets\piac_icon.ico",
                         large_icon=r"assets\piac_icon.ico",
                         width=1200, height=800)
-    
+
     MainWindow = main_window()
     MainWindow.create()
     dpg.set_primary_window("__main_window", True)
     dpg.bind_font(default_font)
-    
+
     dpg.setup_dearpygui()
     dpg.show_viewport()
-    
+
     # below replaces, start_dearpygui()
     while dpg.is_dearpygui_running():
         # insert here any code you would like to run in the render loop
         # you can manually stop by using stop_dearpygui()
+
         MainWindow.update_data_tables()
         dpg.render_dearpygui_frame()
     dpg.destroy_context()
-    
+
     MainWindow.close_shm()
 
 
@@ -274,7 +279,7 @@ def demo_data():
     import time
     cfg = toml.loads(default_toml_config)
     shm = SharedMemDict(**cfg,verbose=True)
-    
+
     t0=time.perf_counter()
     while True:
         shm.arr[0] = time.perf_counter()-t0
@@ -285,9 +290,9 @@ def demo_data():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-d','--demo-data',required=False, action='store_true')
-    
+
     args = parser.parse_args()
-    
+
     if args.demo_data:
         demo_data()
     else:
